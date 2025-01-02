@@ -3,6 +3,7 @@ Brew EXP is a flexible, cross-framework API designed to manage and enhance exper
 
 It’s fully open-source, giving you full access to the code, so you can refine and extend the API to meet your needs. Enable seamless support for skills across frameworks and get started with a simple configuration.
 
+Get support on my discord: https://discord.gg/sZKg6kEC2Y
 ## Features:
 
 - Easy integration with any framework
