@@ -6,9 +6,13 @@ local UserStorage = {}
 RegisterNetEvent("brew_exp:getUserData")
 AddEventHandler("brew_exp:getUserData", function()
     if Config.UseVorpSkills == false then
+        MySQL.update("CREATE TABLE IF NOT EXISTS brew_exp (identifier VARCHAR(50) PRIMARY KEY, skills LONGTEXT)")
         local skills = MySQL.query.await("SELECT * FROM brew_exp")
+        if skills == nil then
+            return
+        end
         for _, skill in pairs(skills) do
-            UserStorage[skill.charid] = skill.skills
+            UserStorage[skill.identifier] = skill.skills
         end
     end
 end)
@@ -33,7 +37,7 @@ function getSkills(source)
     else
         local user = jo.framework:getUser(source)
         local data = user:getIdentifiers()
-        return UserStorage[data.charid]
+        return UserStorage[data.identifier]
     end
 end
 exports('getSkills', getSkills)
@@ -53,7 +57,10 @@ function getSkill(source, category)
     else
         local user = jo.framework:getUser(source)
         local data = user:getIdentifiers()
-        local skills = json.decode(UserStorage[data.charid])
+        local skills = json.decode(UserStorage[data.identifier])
+        if skills == nil then
+            return nil
+        end
         if skills[category] then
             return json.encode(skills[category])
         else
@@ -76,6 +83,7 @@ function removeSkillExp(source, category, expToRemove)
     if Config.UseVorpSkills == false then
         local user = jo.framework:getUser(source)
         local playerData = user:getIdentifiers()
+        local charid = playerData.identifier
         local skillsJSON = getSkills(source) -- Assuming this returns a JSON string
         local skills = json.decode(skillsJSON) or {} -- Decode JSON to a table, fallback to empty table if nil
         if (Config.Skills[category] == nil) then
@@ -112,11 +120,19 @@ function removeSkillExp(source, category, expToRemove)
         end
 
         -- Update the skills in the database
-        MySQL.update("UPDATE brew_exp SET skills = @skills WHERE charid = @charid", {
+        if not UserStorage[charid] then
+            -- If not, create a new entry with default skills
+            UserStorage[charid] = json.encode({})
+            MySQL.update("INSERT INTO brew_exp (identifier, skills) VALUES (@identifier, @skills)", {
+                identifier = charid,
+                skills = UserStorage[charid]
+            })
+        end
+        MySQL.update("UPDATE brew_exp SET skills = @skills WHERE identifier = @identifier", {
             skills = json.encode(skills), -- Encode updated skills back to JSON
-            charid = playerData.charid
+            identifier = charid
         })
-        UserStorage[playerData.charid] = json.encode(skills)
+        UserStorage[charid] = json.encode(skills)
         print(json.encode(skills[category]))
         return json.encode(skills)
     end
@@ -149,6 +165,8 @@ function addSkillExp(source, category, expToAdd)
         -- Parse the player's skills JSON string into a Lua table
         local user = jo.framework:getUser(source)
         local playerData = user:getIdentifiers()
+        print(json.encode(playerData))
+        local charid = playerData.identifier
         local skillsJSON = getSkills(source) -- Assuming this returns a JSON string
         local skills = json.decode(skillsJSON) or {} -- Decode JSON to a table, fallback to empty table if nil
         if (Config.Skills[category] == nil) then
@@ -182,13 +200,20 @@ function addSkillExp(source, category, expToAdd)
         if skill.Level == skill.MaxLevel and skill.Exp > skill.NextLevel then
             skill.Exp = skill.NextLevel
         end
-
+        if not UserStorage[charid] then
+            -- If not, create a new entry with default skills
+            UserStorage[charid] = json.encode({})
+            MySQL.update("INSERT INTO brew_exp (identifier, skills) VALUES (@identifier, @skills)", {
+                identifier = charid,
+                skills = UserStorage[charid]
+            })
+        end
         -- Update the skills in the database
-        MySQL.update("UPDATE brew_exp SET skills = @skills WHERE charid = @charid", {
+        MySQL.update("UPDATE brew_exp SET skills = @skills WHERE identifier = @identifier", {
             skills = json.encode(skills), -- Encode updated skills back to JSON
-            charid = playerData.charid
+            identifier = charid
         })
-        UserStorage[playerData.charid] = json.encode(skills)
+        UserStorage[charid] = json.encode(skills)
 
         return json.encode(skills)
     end
@@ -205,6 +230,7 @@ function setSkillLevel(source, category, level, resetExp)
         -- Parse the player's skills JSON string into a Lua table
         local user = jo.framework:getUser(source)
         local playerData = user:getIdentifiers()
+        local charid = playerData.identifier
         local skillsJSON = getSkills(source) -- Assuming this returns a JSON string
         local skills = json.decode(skillsJSON) or {} -- Decode JSON to a table, fallback to empty table if nil
         if (Config.Skills[category] == nil) then
@@ -229,12 +255,19 @@ function setSkillLevel(source, category, level, resetExp)
         if resetExp == true then
             skill.Exp = 0
         end
-
-        MySQL.update("UPDATE brew_exp SET skills = @skills WHERE charid = @charid", {
+        if not UserStorage[charid] then
+            -- If not, create a new entry with default skills
+            UserStorage[charid] = json.encode({})
+            MySQL.update("INSERT INTO brew_exp (identifier, skills) VALUES (@identifier, @skills)", {
+                identifier = charid,
+                skills = UserStorage[charid]
+            })
+        end
+        MySQL.update("UPDATE brew_exp SET skills = @skills WHERE identifier = @identifier", {
             skills = json.encode(skills), -- Encode updated skills back to JSON
-            charid = playerData.charid
+            identifier = charid
         })
-        UserStorage[playerData.charid] = json.encode(skills)
+        UserStorage[charid] = json.encode(skills)
 
         return json.encode(skills)
     end
@@ -348,4 +381,40 @@ function getMissingExp(source, category)
 end
 exports('getMissingExp', getMissingExp)
 
+if Config.Debug then
+    RegisterCommand('addSkillExp', function(source, args, rawCommand)
+        addSkillExp(source, args[1], tonumber(args[2]))
+    end)
 
+    RegisterCommand('removeSkillExp', function(source, args, rawCommand)
+        removeSkillExp(source, args[1], tonumber(args[2]))
+    end)
+
+    RegisterCommand('setSkillLevel', function(source, args, rawCommand)
+        setSkillLevel(source, args[1], tonumber(args[2]), true)
+    end)
+
+    RegisterCommand('getSkillExp', function(source, args, rawCommand)
+        print(getSkillExp(source, args[1]))
+    end)
+
+    RegisterCommand('getSkillLevel', function(source, args, rawCommand)
+        print(getSkillLevel(source, args[1]))
+    end)
+
+    RegisterCommand('getSkillLabel', function(source, args, rawCommand)
+        print(getSkillLabel(source, args[1]))
+    end)
+
+    RegisterCommand('getMissingExp', function(source, args, rawCommand)
+        print(getMissingExp(source, args[1]))
+    end)
+
+    RegisterCommand('getSkill', function(source, args, rawCommand)
+        print(getSkill(source, args[1]))
+    end)
+
+    RegisterCommand('getSkills', function(source, args, rawCommand)
+        print(getSkills(source))
+    end)
+end
