@@ -32,4 +32,5 @@ version '1.0'
 jo_libs {
     'framework',    
     'database',
+    'callback'
 }

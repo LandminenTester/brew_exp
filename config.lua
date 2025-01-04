@@ -1,5 +1,5 @@
 Config = {}
-Config.Debug = false
+Config.Debug = true
 
 --[[ 
 If you use VORP, then set to true. If you can replace every exp sets from vorp with my exp system exports, because 
