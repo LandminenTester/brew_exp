@@ -39,14 +39,13 @@ function getSkills(source)
     else
         local user = jo.framework:getUser(source)
         local data = user:getIdentifiers()
-        print(json.encode(data))
         if UserStorage[data.identifier] then
             return UserStorage[data.identifier]
         else
             UserStorage[data.identifier] = {}
             MySQL.update("INSERT INTO brew_exp (identifier, skills) VALUES (@identifier, @skills)", {
                 identifier = data.identifier,
-                skills = UserStorage[data.identifier]
+                skills = json.encode(UserStorage[data.identifier])
             })
             return UserStorage[data.identifier]
         end
