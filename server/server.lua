@@ -120,6 +120,7 @@ function removeSkillExp(source, category, expToRemove)
             skill.NextLevel = Config.Skills[category].Levels[skill.Level].NextLevel
             skill.Label = Config.Skills[category].Levels[skill.Level].Label
             skill.Exp = skill.Exp + skill.NextLevel
+            Wait(0)
         end
 
         -- Ensure EXP doesn't go below 0 for the lowest level
@@ -166,6 +167,7 @@ function addSkillExp(source, category, expToAdd)
                 Character.setSkills(category, expAmount)
                 expAmount = 0
             end
+            Wait(0)
         end
     else
         -- Parse the player's skills JSON string into a Lua table
@@ -198,6 +200,7 @@ function addSkillExp(source, category, expToAdd)
             skill.Level = skill.Level + 1
             skill.Label = Config.Skills[category].Levels[skill.Level].Label
             skill.NextLevel = Config.Skills[category].Levels[skill.Level].NextLevel
+            Wait(0)
         end
 
         -- Ensure EXP doesn't exceed NextLevel for the max level
