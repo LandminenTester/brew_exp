@@ -30,48 +30,5 @@ Config.Skills = {
             }
         }
     },
-
-    mining = { -- Name of the Skill Name
-        Levels = {
-            { -- level 1
-                NextLevel = 100, -- if 100 xp is reached then level up, this is the max xp for this level
-                Label = "Beginner"
-            }, { -- level 2
-                NextLevel = 200, -- need to have 200 xp to level up
-                Label = "Novice"
-            }, { -- level 3
-                NextLevel = 300, -- need to have 300 xp to level up
-                Label = "Apprentice"
-            }, { -- level 4
-                NextLevel = 400, -- need to have 400 xp to level up
-                Label = "Journeyman"
-            }, { -- level 5
-                NextLevel = 500, -- need to have 500 xp to level up
-                Label = "Expert"
-            }
-        }
-    },
-
-    Hunting = { -- Name of the Skill Name
-        Levels = {
-            { -- level 1
-                NextLevel = 100, -- if 100 xp is reached then level up, this is the max xp for this level
-                Label = "Beginner"
-            }, { -- level 2
-                NextLevel = 200, -- need to have 200 xp to level up
-                Label = "Novice"
-            }, { -- level 3
-                NextLevel = 300, -- need to have 300 xp to level up
-                Label = "Apprentice"
-            }, { -- level 4
-                NextLevel = 400, -- need to have 400 xp to level up
-                Label = "Journeyman"
-            }, { -- level 5
-                NextLevel = 500, -- need to have 500 xp to level up
-                Label = "Expert"
-            }
-        }
-    },
-
 }
 

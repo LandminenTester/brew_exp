@@ -38,8 +38,19 @@ function getSkills(source)
         return skills
     else
         local user = jo.framework:getUser(source)
+        if not user then
+            return {}
+        end
         local data = user:getIdentifiers()
+        if not data or not data.identifier then
+            return {}
+        end
         if UserStorage[data.identifier] then
+            -- Validate existing data before returning
+            local skills = UserStorage[data.identifier]
+            for category, _ in pairs(Config.Skills) do
+                validateAndFixSkillData(skills, category)
+            end
             return UserStorage[data.identifier]
         else
             UserStorage[data.identifier] = {}
@@ -67,8 +78,20 @@ function getSkill(source, category)
         end
     else
         local user = jo.framework:getUser(source)
+        if not user then
+            return nil
+        end
         local data = user:getIdentifiers()
-        local skills = json.decode(UserStorage[data.identifier])
+        if not data or not data.identifier then
+            return nil
+        end
+        if not UserStorage[data.identifier] then
+            return nil
+        end
+        local skills = UserStorage[data.identifier]
+        if type(skills) == "string" then
+            skills = json.decode(skills)
+        end
         if skills == nil then
             return nil
         end
@@ -92,10 +115,16 @@ function removeSkillExp(source, category, expToRemove)
 
     if Config.UseVorpSkills == false then
         local user = jo.framework:getUser(source)
+        if not user then
+            return nil
+        end
         local playerData = user:getIdentifiers()
+        if not playerData or not playerData.identifier then
+            return nil
+        end
         local charid = playerData.identifier
-        local skillsJSON = getSkills(source) -- Assuming this returns a JSON string
-        local skills = json.decode(skillsJSON) or {} -- Decode JSON to a table, fallback to empty table if nil
+        local skillsJSON = getSkills(source) -- This returns a table, not a JSON string
+        local skills = skillsJSON or {} -- Use directly since getSkills returns a table
         if (Config.Skills[category] == nil) then
             return
         end
@@ -109,6 +138,15 @@ function removeSkillExp(source, category, expToRemove)
                 NextLevel = Config.Skills[category].Levels[1].NextLevel,
                 Level = 1
             }
+        else
+            -- Validate and fix existing skill data consistency
+            local skill = skills[category]
+            if skill.Level and skill.Level > 0 and skill.Level <= #Config.Skills[category].Levels then
+                -- Update label and NextLevel based on current level to ensure consistency
+                skill.Label = Config.Skills[category].Levels[skill.Level].Label
+                skill.NextLevel = Config.Skills[category].Levels[skill.Level].NextLevel
+                skill.MaxLevel = #Config.Skills[category].Levels
+            end
         end
         -- Remove the EXP from the category
         local skill = skills[category]
@@ -131,18 +169,19 @@ function removeSkillExp(source, category, expToRemove)
         -- Update the skills in the database
         if not UserStorage[charid] then
             -- If not, create a new entry with default skills
-            UserStorage[charid] = json.encode({})
+            UserStorage[charid] = {}
             MySQL.update("INSERT INTO brew_exp (identifier, skills) VALUES (@identifier, @skills)", {
                 identifier = charid,
-                skills = UserStorage[charid]
+                skills = json.encode(UserStorage[charid])
             })
         end
         MySQL.update("UPDATE brew_exp SET skills = @skills WHERE identifier = @identifier", {
             skills = json.encode(skills), -- Encode updated skills back to JSON
             identifier = charid
         })
-        UserStorage[charid] = json.encode(skills)
-        return json.encode(skills)
+        UserStorage[charid] = skills -- Store as table, not JSON string
+        debugSkillInfo(source, category)
+        return skills -- Return table, not JSON string
     end
 end
 
@@ -172,9 +211,15 @@ function addSkillExp(source, category, expToAdd)
     else
         -- Parse the player's skills JSON string into a Lua table
         local user = jo.framework:getUser(source)
+        if not user then
+            return nil
+        end
         local playerData = user:getIdentifiers()
+        if not playerData or not playerData.identifier then
+            return nil
+        end
         local charid = playerData.identifier
-        local skillsJSON = getSkills(source) -- Assuming this returns a JSON string
+        local skillsJSON = getSkills(source) -- This returns a table, not a JSON string
         
         if (Config.Skills[category] == nil) then
             return
@@ -188,6 +233,15 @@ function addSkillExp(source, category, expToAdd)
                 NextLevel = Config.Skills[category].Levels[1].NextLevel,
                 Level = 1
             }
+        else
+            -- Validate and fix existing skill data consistency
+            local skill = skillsJSON[category]
+            if skill.Level and skill.Level > 0 and skill.Level <= #Config.Skills[category].Levels then
+                -- Update label and NextLevel based on current level to ensure consistency
+                skill.Label = Config.Skills[category].Levels[skill.Level].Label
+                skill.NextLevel = Config.Skills[category].Levels[skill.Level].NextLevel
+                skill.MaxLevel = #Config.Skills[category].Levels
+            end
         end
 
         -- Add the EXP to the category
@@ -209,10 +263,10 @@ function addSkillExp(source, category, expToAdd)
         end
         if not UserStorage[charid] then
             -- If not, create a new entry with default skills
-            UserStorage[charid] = json.encode({})
+            UserStorage[charid] = {}
             MySQL.update("INSERT INTO brew_exp (identifier, skills) VALUES (@identifier, @skills)", {
                 identifier = charid,
-                skills = UserStorage[charid]
+                skills = json.encode(UserStorage[charid])
             })
         end
         -- Update the skills in the database
@@ -220,8 +274,9 @@ function addSkillExp(source, category, expToAdd)
             skills = json.encode(skillsJSON), -- Encode updated skills back to JSON
             identifier = charid
         })
-        UserStorage[charid] = skillsJSON
-        return skillsJSON
+        UserStorage[charid] = skillsJSON -- Store as table
+        debugSkillInfo(source, category)
+        return skillsJSON -- Return table
     end
 end
 exports('addSkillExp', addSkillExp)
@@ -235,10 +290,16 @@ function setSkillLevel(source, category, level, resetExp)
     if Config.UseVorpSkills == false then
         -- Parse the player's skills JSON string into a Lua table
         local user = jo.framework:getUser(source)
+        if not user then
+            return nil
+        end
         local playerData = user:getIdentifiers()
+        if not playerData or not playerData.identifier then
+            return nil
+        end
         local charid = playerData.identifier
-        local skillsJSON = getSkills(source) -- Assuming this returns a JSON string
-        local skills = json.decode(skillsJSON) or {} -- Decode JSON to a table, fallback to empty table if nil
+        local skillsJSON = getSkills(source) -- This returns a table, not a JSON string
+        local skills = skillsJSON or {} -- Use directly since getSkills returns a table
         if (Config.Skills[category] == nil) then
             return
         end
@@ -251,30 +312,46 @@ function setSkillLevel(source, category, level, resetExp)
                 NextLevel = Config.Skills[category].Levels[1].NextLevel,
                 Level = 1
             }
+        else
+            -- Validate and fix existing skill data consistency
+            local skill = skills[category]
+            if skill.Level and skill.Level > 0 and skill.Level <= #Config.Skills[category].Levels then
+                -- Update label and NextLevel based on current level to ensure consistency
+                skill.Label = Config.Skills[category].Levels[skill.Level].Label
+                skill.NextLevel = Config.Skills[category].Levels[skill.Level].NextLevel
+                skill.MaxLevel = #Config.Skills[category].Levels
+            end
         end
 
-        -- Add the EXP to the category
+        -- Set the level
         local skill = skills[category]
         skill.Level = level
+        
+        -- Update the label and NextLevel for the new level
+        if level > 0 and level <= #Config.Skills[category].Levels then
+            skill.Label = Config.Skills[category].Levels[level].Label
+            skill.NextLevel = Config.Skills[category].Levels[level].NextLevel
+        end
         
         if resetExp == true then
             skill.Exp = 0
         end
         if not UserStorage[charid] then
             -- If not, create a new entry with default skills
-            UserStorage[charid] = json.encode({})
+            UserStorage[charid] = {}
             MySQL.update("INSERT INTO brew_exp (identifier, skills) VALUES (@identifier, @skills)", {
                 identifier = charid,
-                skills = UserStorage[charid]
+                skills = json.encode(UserStorage[charid])
             })
         end
         MySQL.update("UPDATE brew_exp SET skills = @skills WHERE identifier = @identifier", {
             skills = json.encode(skills), -- Encode updated skills back to JSON
             identifier = charid
         })
-        UserStorage[charid] = json.encode(skills)
+        UserStorage[charid] = skills -- Store as table
 
-        return json.encode(skills)
+        debugSkillInfo(source, category)
+        return skills -- Return table
     end
 end
 exports('setSkillLevel', setSkillLevel)
@@ -293,8 +370,10 @@ function getSkillExp(source, category)
             return nil
         end
     else
-        local skillsJSON = getSkills(source)
-        local skills = json.decode(skillsJSON) or {}
+        local skills = getSkills(source) -- This returns a table
+        if not skills then
+            return nil
+        end
 
         if skills[category] then
             return skills[category].Exp
@@ -319,9 +398,11 @@ function getSkillLevel(source, category)
             return nil
         end
     else
-        -- Get the skills JSON and decode it into a Lua table
-        local skillsJSON = getSkills(source)
-        local skills = json.decode(skillsJSON) or {}
+        -- Get the skills table directly
+        local skills = getSkills(source) -- This returns a table
+        if not skills then
+            return nil
+        end
 
         -- Check if the category exists and return the level
         if skills[category] then
@@ -349,11 +430,13 @@ function getSkillLabel(source, category)
             return nil
         end
     else
-        -- Get the skills JSON and decode it into a Lua table
-        local skillsJSON = getSkills(source)
-        local skills = json.decode(skillsJSON) or {}
+        -- Get the skills table directly
+        local skills = getSkills(source) -- This returns a table
+        if not skills then
+            return nil
+        end
 
-        -- Check if the category exists and return the level
+        -- Check if the category exists and return the label
         if skills[category] then
             return skills[category].Label
         else
@@ -385,3 +468,93 @@ function getMissingExp(source, category)
     end
 end
 exports('getMissingExp', getMissingExp)
+
+---@param skills table The skills table to validate
+---@param category string The skill category to validate
+function validateAndFixSkillData(skills, category)
+    if not skills or not skills[category] or not Config.Skills[category] then
+        return false
+    end
+    
+    local skill = skills[category]
+    local config = Config.Skills[category]
+    
+    -- Ensure all required fields exist
+    if not skill.Level then skill.Level = 1 end
+    if not skill.Exp then skill.Exp = 0 end
+    if not skill.MaxLevel then skill.MaxLevel = #config.Levels end
+    
+    -- Validate level bounds
+    if skill.Level < 1 then skill.Level = 1 end
+    if skill.Level > #config.Levels then skill.Level = #config.Levels end
+    
+    -- Update label and NextLevel based on current level
+    skill.Label = config.Levels[skill.Level].Label
+    skill.NextLevel = config.Levels[skill.Level].NextLevel
+    
+    -- Validate experience bounds for current level
+    if skill.Exp < 0 then skill.Exp = 0 end
+    if skill.Exp >= skill.NextLevel and skill.Level < skill.MaxLevel then
+        -- Player should have leveled up, fix this
+        while skill.Exp >= skill.NextLevel and skill.Level < skill.MaxLevel do
+            skill.Exp = skill.Exp - skill.NextLevel
+            skill.Level = skill.Level + 1
+            skill.Label = config.Levels[skill.Level].Label
+            skill.NextLevel = config.Levels[skill.Level].NextLevel
+        end
+    end
+    
+    return true
+end
+
+-- Debug function to print skill information
+function debugSkillInfo(source, category)
+    if not Config.Debug then return end
+    
+    local skills = getSkills(source)
+    if skills and skills[category] then
+        local skill = skills[category]
+        print("DEBUG - Player " .. source .. " - Category: " .. category)
+        print("  Level: " .. tostring(skill.Level))
+        print("  Exp: " .. tostring(skill.Exp))
+        print("  NextLevel: " .. tostring(skill.NextLevel))
+        print("  Label: " .. tostring(skill.Label))
+        print("  MaxLevel: " .. tostring(skill.MaxLevel))
+    end
+end
+
+-- Command to fix all player skill data in the database
+RegisterCommand("fixskilldata", function(source, args, rawCommand)
+    if source ~= 0 then -- Only allow from server console
+        print("This command can only be executed from the server console.")
+        return
+    end
+    
+    print("Starting skill data validation and repair...")
+    local repaired = 0
+    
+    for identifier, skills in pairs(UserStorage) do
+        local needsUpdate = false
+        for category, _ in pairs(Config.Skills) do
+            if skills[category] then
+                local oldData = json.encode(skills[category])
+                validateAndFixSkillData(skills, category)
+                local newData = json.encode(skills[category])
+                if oldData ~= newData then
+                    needsUpdate = true
+                end
+            end
+        end
+        
+        if needsUpdate then
+            MySQL.update("UPDATE brew_exp SET skills = @skills WHERE identifier = @identifier", {
+                skills = json.encode(skills),
+                identifier = identifier
+            })
+            repaired = repaired + 1
+            print("Repaired skill data for player: " .. identifier)
+        end
+    end
+    
+    print("Skill data repair completed. Repaired " .. repaired .. " player records.")
+end, true)
