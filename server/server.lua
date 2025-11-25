@@ -6,7 +6,7 @@ local UserStorage = {}
 
 AddEventHandler('onResourceStart', function(resourceName)
     if (GetCurrentResourceName() ~= resourceName) then
-      return
+        return
     end
     if Config.UseVorpSkills == false then
         MySQL.update("CREATE TABLE IF NOT EXISTS brew_exp (identifier VARCHAR(50) PRIMARY KEY, skills LONGTEXT)")
@@ -20,6 +20,11 @@ AddEventHandler('onResourceStart', function(resourceName)
     end
 end)
 
+function DebugPrint(message)
+    if not Config.Debug then return end
+    print("^2[Brew Exp Debug]^7: " .. message)
+end
+
 function getSkillConfig(category)
     if Config.Skills[category] then
         return Config.Skills[category]
@@ -27,10 +32,12 @@ function getSkillConfig(category)
         return nil
     end
 end
+
 exports('getSkillConfig', getSkillConfig)
 
 ---@param source integer The source ID of the user
 function getSkills(source)
+    DebugPrint("getSkills called for source: " .. tostring(source))
     if Config.UseVorpSkills then
         local VORPcore = exports.vorp_core:GetCore()
         local Character = VORPcore.getUser(source).getUsedCharacter
@@ -62,6 +69,7 @@ function getSkills(source)
         end
     end
 end
+
 exports('getSkills', getSkills)
 
 ---@param source integer The source ID of the user
@@ -102,12 +110,14 @@ function getSkill(source, category)
         end
     end
 end
+
 exports('getSkill', getSkill)
 
 ---@param source integer The source ID of the user
 ---@param category string The skill category
 ---@param expToRemove number The amount of experience to remove
 function removeSkillExp(source, category, expToRemove)
+    DebugPrint("removeSkillExp called - Source: " .. tostring(source) .. ", Category: " .. tostring(category) .. ", Exp to Remove: " .. tostring(expToRemove))
     local _source = source
     if expToRemove <= 0 then
         return
@@ -124,11 +134,11 @@ function removeSkillExp(source, category, expToRemove)
         end
         local charid = playerData.identifier
         local skillsJSON = getSkills(source) -- This returns a table, not a JSON string
-        local skills = skillsJSON or {} -- Use directly since getSkills returns a table
+        local skills = skillsJSON or {}      -- Use directly since getSkills returns a table
         if (Config.Skills[category] == nil) then
             return
         end
-        
+
         -- Check if the category exists; if not, add it
         if not skills[category] then
             skills[category] = {
@@ -181,7 +191,7 @@ function removeSkillExp(source, category, expToRemove)
         })
         UserStorage[charid] = skills -- Store as table, not JSON string
         debugSkillInfo(source, category)
-        return skills -- Return table, not JSON string
+        return skills                -- Return table, not JSON string
     end
 end
 
@@ -189,43 +199,58 @@ end
 ---@param category string The skill category
 ---@param expToAdd number The amount of experience to add
 function addSkillExp(source, category, expToAdd)
+    DebugPrint("addSkillExp called - Source: " .. tostring(source) .. ", Category: " .. tostring(category) .. ", Exp to Add: " .. tostring(expToAdd))
     local _source = source
     if expToAdd <= 0 then
+        DebugPrint("expToAdd is <= 0, returning early")
         return
     end
+    DebugPrint("Config.UseVorpSkills: " .. tostring(Config.UseVorpSkills))
     if Config.UseVorpSkills then
+        DebugPrint("Using VORP Skills system")
         local VORPcore = exports.vorp_core:GetCore() -- NEW includes  new callback system
         local Character = VORPcore.getUser(_source).getUsedCharacter
-        local expAmount = expToAdd
-        while expAmount > 0 do
-            local missingExp = tonumber(getMissingExp(_source, category))
-            if missingExp  <= expAmount then
-                Character.setSkills(category, missingExp)
-                expAmount = expAmount - missingExp
-            else
-                Character.setSkills(category, expAmount)
-                expAmount = 0
-            end
-            Wait(0)
+        local skills = Character.skills
+        
+        if skills[category] then
+            DebugPrint("Current VORP skill data - Level: " .. tostring(skills[category].Level) .. ", Exp: " .. tostring(skills[category].Exp) .. ", NextLevel: " .. tostring(skills[category].NextLevel))
+        end
+        
+        -- VORP setSkills is incremental, so just add the exp directly
+        DebugPrint("Adding " .. tostring(expToAdd) .. " exp to VORP skill: " .. tostring(category))
+        Character.setSkills(category, expToAdd)
+        
+        -- Debug the result
+        Wait(100) -- Small wait to let VORP process
+        local updatedSkills = VORPcore.getUser(_source).getUsedCharacter.skills
+        if updatedSkills[category] then
+            DebugPrint("After adding exp - Level: " .. tostring(updatedSkills[category].Level) .. ", Exp: " .. tostring(updatedSkills[category].Exp) .. ", NextLevel: " .. tostring(updatedSkills[category].NextLevel))
         end
     else
+        DebugPrint("Using custom brew_exp system")
         -- Parse the player's skills JSON string into a Lua table
         local user = jo.framework:getUser(source)
         if not user then
+            DebugPrint("User not found, returning nil")
             return nil
         end
         local playerData = user:getIdentifiers()
         if not playerData or not playerData.identifier then
+            DebugPrint("Player data or identifier not found, returning nil")
             return nil
         end
         local charid = playerData.identifier
+        DebugPrint("Player identifier: " .. tostring(charid))
         local skillsJSON = getSkills(source) -- This returns a table, not a JSON string
-        
+
         if (Config.Skills[category] == nil) then
+            DebugPrint("Category " .. tostring(category) .. " not found in Config.Skills, returning")
             return
         end
+        DebugPrint("Category config found for: " .. tostring(category))
         -- Check if the category exists; if not, add it
         if not skillsJSON[category] then
+            DebugPrint("Creating new skill entry for category: " .. tostring(category))
             skillsJSON[category] = {
                 Exp = 0,
                 MaxLevel = #Config.Skills[category].Levels,
@@ -234,6 +259,7 @@ function addSkillExp(source, category, expToAdd)
                 Level = 1
             }
         else
+            DebugPrint("Skill entry already exists for category: " .. tostring(category))
             -- Validate and fix existing skill data consistency
             local skill = skillsJSON[category]
             if skill.Level and skill.Level > 0 and skill.Level <= #Config.Skills[category].Levels then
@@ -246,21 +272,32 @@ function addSkillExp(source, category, expToAdd)
 
         -- Add the EXP to the category
         local skill = skillsJSON[category]
+        DebugPrint("Before adding exp - Level: " .. tostring(skill.Level) .. ", Exp: " .. tostring(skill.Exp) .. ", NextLevel: " .. tostring(skill.NextLevel))
         skill.Exp = skill.Exp + expToAdd
+        DebugPrint("After adding exp - Total Exp: " .. tostring(skill.Exp))
 
         -- Handle level-up logic
-        while skill.Exp >= skill.NextLevel and skill.Level < skill.MaxLevel do
+        local maxLevel = #Config.Skills[category].Levels
+        DebugPrint("Max Level calculated: " .. tostring(maxLevel) .. " (from config levels count)")
+        DebugPrint("Level-up check - Current Level: " .. tostring(skill.Level) .. ", Max Level: " .. tostring(maxLevel))
+        DebugPrint("Condition check: skill.Exp >= skill.NextLevel? " .. tostring(skill.Exp >= skill.NextLevel) .. " (" .. tostring(skill.Exp) .. " >= " .. tostring(skill.NextLevel) .. ")")
+        DebugPrint("Condition check: skill.Level < maxLevel? " .. tostring(skill.Level < maxLevel) .. " (" .. tostring(skill.Level) .. " < " .. tostring(maxLevel) .. ")")
+        while skill.Exp >= skill.NextLevel and skill.Level < maxLevel do
+            DebugPrint("LEVELING UP! From Level " .. tostring(skill.Level) .. " to " .. tostring(skill.Level + 1))
             skill.Exp = skill.Exp - skill.NextLevel
             skill.Level = skill.Level + 1
             skill.Label = Config.Skills[category].Levels[skill.Level].Label
             skill.NextLevel = Config.Skills[category].Levels[skill.Level].NextLevel
+            DebugPrint("New level stats - Level: " .. tostring(skill.Level) .. ", Remaining Exp: " .. tostring(skill.Exp) .. ", NextLevel: " .. tostring(skill.NextLevel))
             Wait(0)
         end
 
-        -- Ensure EXP doesn't exceed NextLevel for the max level
-        if skill.Level == skill.MaxLevel and skill.Exp > skill.NextLevel then
+        -- Ensure EXP doesn't exceed NextLevel for the max level only
+        if skill.Level == maxLevel and skill.Exp > skill.NextLevel then
+            DebugPrint("Max level reached, capping exp at NextLevel")
             skill.Exp = skill.NextLevel
         end
+        DebugPrint("Final stats - Level: " .. tostring(skill.Level) .. ", Exp: " .. tostring(skill.Exp) .. ", NextLevel: " .. tostring(skill.NextLevel))
         if not UserStorage[charid] then
             -- If not, create a new entry with default skills
             UserStorage[charid] = {}
@@ -276,9 +313,10 @@ function addSkillExp(source, category, expToAdd)
         })
         UserStorage[charid] = skillsJSON -- Store as table
         debugSkillInfo(source, category)
-        return skillsJSON -- Return table
+        return skillsJSON                -- Return table
     end
 end
+
 exports('addSkillExp', addSkillExp)
 
 ---@param source integer The source ID of the user
@@ -286,6 +324,7 @@ exports('addSkillExp', addSkillExp)
 ---@param level integer The level to set
 ---@param resetExp boolean Whether to reset experience
 function setSkillLevel(source, category, level, resetExp)
+    DebugPrint("setSkillLevel called - Source: " .. tostring(source) .. ", Category: " .. tostring(category) .. ", Level: " .. tostring(level) .. ", Reset Exp: " .. tostring(resetExp))
     local _source = source
     if Config.UseVorpSkills == false then
         -- Parse the player's skills JSON string into a Lua table
@@ -299,7 +338,7 @@ function setSkillLevel(source, category, level, resetExp)
         end
         local charid = playerData.identifier
         local skillsJSON = getSkills(source) -- This returns a table, not a JSON string
-        local skills = skillsJSON or {} -- Use directly since getSkills returns a table
+        local skills = skillsJSON or {}      -- Use directly since getSkills returns a table
         if (Config.Skills[category] == nil) then
             return
         end
@@ -326,13 +365,13 @@ function setSkillLevel(source, category, level, resetExp)
         -- Set the level
         local skill = skills[category]
         skill.Level = level
-        
+
         -- Update the label and NextLevel for the new level
         if level > 0 and level <= #Config.Skills[category].Levels then
             skill.Label = Config.Skills[category].Levels[level].Label
             skill.NextLevel = Config.Skills[category].Levels[level].NextLevel
         end
-        
+
         if resetExp == true then
             skill.Exp = 0
         end
@@ -354,6 +393,7 @@ function setSkillLevel(source, category, level, resetExp)
         return skills -- Return table
     end
 end
+
 exports('setSkillLevel', setSkillLevel)
 
 ---@param source integer The source ID of the user
@@ -382,6 +422,7 @@ function getSkillExp(source, category)
         end
     end
 end
+
 exports('getSkillExp', getSkillExp)
 
 ---@param source integer The source ID of the user
@@ -412,6 +453,7 @@ function getSkillLevel(source, category)
         end
     end
 end
+
 exports('getSkillLevel', getSkillLevel)
 
 
@@ -423,7 +465,7 @@ function getSkillLabel(source, category)
         local Character = VORPcore.getUser(source).getUsedCharacter
         local skills = Character.skills
         local skill = skills[category]
-        
+
         if skill then
             return skill.Label
         else
@@ -444,6 +486,7 @@ function getSkillLabel(source, category)
         end
     end
 end
+
 exports('getSkillLabel', getSkillLabel)
 
 
@@ -457,7 +500,6 @@ function getMissingExp(source, category)
         local skill = skills[category]
         if skill then
             return skill.NextLevel - skill.Exp
-
         else
             return nil
         end
@@ -467,50 +509,55 @@ function getMissingExp(source, category)
         return nextLevel - exp
     end
 end
+
 exports('getMissingExp', getMissingExp)
 
 ---@param skills table The skills table to validate
 ---@param category string The skill category to validate
 function validateAndFixSkillData(skills, category)
+    DebugPrint("validateAndFixSkillData called for category: " .. tostring(category))
     if not skills or not skills[category] or not Config.Skills[category] then
+        DebugPrint("Validation failed - missing data")
         return false
     end
-    
+
     local skill = skills[category]
     local config = Config.Skills[category]
-    
+
     -- Ensure all required fields exist
     if not skill.Level then skill.Level = 1 end
     if not skill.Exp then skill.Exp = 0 end
     if not skill.MaxLevel then skill.MaxLevel = #config.Levels end
-    
+
     -- Validate level bounds
     if skill.Level < 1 then skill.Level = 1 end
     if skill.Level > #config.Levels then skill.Level = #config.Levels end
-    
+
     -- Update label and NextLevel based on current level
     skill.Label = config.Levels[skill.Level].Label
     skill.NextLevel = config.Levels[skill.Level].NextLevel
-    
+
     -- Validate experience bounds for current level
     if skill.Exp < 0 then skill.Exp = 0 end
     if skill.Exp >= skill.NextLevel and skill.Level < skill.MaxLevel then
+        DebugPrint("Validation found player should have leveled up - fixing...")
         -- Player should have leveled up, fix this
         while skill.Exp >= skill.NextLevel and skill.Level < skill.MaxLevel do
             skill.Exp = skill.Exp - skill.NextLevel
             skill.Level = skill.Level + 1
             skill.Label = config.Levels[skill.Level].Label
             skill.NextLevel = config.Levels[skill.Level].NextLevel
+            DebugPrint("Validation level-up: Now Level " .. tostring(skill.Level))
         end
     end
-    
+
     return true
 end
 
 -- Debug function to print skill information
 function debugSkillInfo(source, category)
     if not Config.Debug then return end
-    
+
     local skills = getSkills(source)
     if skills and skills[category] then
         local skill = skills[category]
@@ -523,16 +570,28 @@ function debugSkillInfo(source, category)
     end
 end
 
+-- -- Command to fix all player skill data in the database
+-- RegisterCommand("giveexp", function(source, args, rawCommand)
+--     local category = args[1]
+--     local expToAdd = tonumber(args[2])
+--     if not category or not expToAdd then
+--         print("Usage: giveexp <category> <amount>")
+--         return
+--     end
+--     print("Starting to give " .. expToAdd .. " EXP to all players in category: " .. category)
+--     addSkillExp(source, category, expToAdd)
+-- end, true)
+
 -- Command to fix all player skill data in the database
 RegisterCommand("fixskilldata", function(source, args, rawCommand)
     if source ~= 0 then -- Only allow from server console
         print("This command can only be executed from the server console.")
         return
     end
-    
+
     print("Starting skill data validation and repair...")
     local repaired = 0
-    
+
     for identifier, skills in pairs(UserStorage) do
         local needsUpdate = false
         for category, _ in pairs(Config.Skills) do
@@ -545,7 +604,7 @@ RegisterCommand("fixskilldata", function(source, args, rawCommand)
                 end
             end
         end
-        
+
         if needsUpdate then
             MySQL.update("UPDATE brew_exp SET skills = @skills WHERE identifier = @identifier", {
                 skills = json.encode(skills),
@@ -555,6 +614,6 @@ RegisterCommand("fixskilldata", function(source, args, rawCommand)
             print("Repaired skill data for player: " .. identifier)
         end
     end
-    
+
     print("Skill data repair completed. Repaired " .. repaired .. " player records.")
 end, true)
